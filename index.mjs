@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAiService, extractAttachment, ProviderError, UserInputError } from './ai-service.mjs';
-import { cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
+import { checkCloudKnowledgeConnection, cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
 
 const app = express();
 app.use(express.json({ limit: '24mb' }));
@@ -15,16 +15,20 @@ const ai = createAiService({
 });
 
 app.get('/api/health', async (_request, response) => {
-  const provider = await ai.health();
+  const [provider, cloudKnowledge] = await Promise.all([
+    ai.health(),
+    checkCloudKnowledgeConnection(),
+  ]);
   response.json({
     ok: true,
     providerConfigured: provider.configured,
     provider: provider.provider,
     model: provider.model,
     cloudKnowledgeConfigured: cloudKnowledgeConfigured(),
+    cloudKnowledge,
     message: provider.configured
       ? ''
-      : 'Google Gemini is not configured. Add GEMINI_API_KEY in Replit Secrets to enable cloud AI.',
+      : 'Google Gemini is not configured. Add GEMINI_API_KEY in Vercel Environment Variables to enable cloud AI.',
   });
 });
 
@@ -72,7 +76,7 @@ app.post('/api/admin/course-materials', async (request, response) => {
         chapter: entry.chapter,
         materialType: entry.materialType,
         text: extracted.text,
-        pageCount: (extracted.text.match(/\[Page \d+\]/g) || []).length,
+        pageCount: (extracted.text.match(/\\[Page \\d+\\]/g) || []).length,
       });
     }
     const result = await saveCloudCourseDocuments(documents);
@@ -155,7 +159,7 @@ app.post('/api/chat', async (request, response) => {
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist');
 if (existsSync(path.join(distDir, 'index.html'))) {
   app.use(express.static(distDir, { index: false, maxAge: '1h' }));
-  app.get(/^\/(?!api\/).*/, (_request, response) => {
+  app.get(/^\\/(?!api\\/).*/, (_request, response) => {
     response.setHeader('Cache-Control', 'no-cache');
     response.sendFile(path.join(distDir, 'index.html'));
   });
