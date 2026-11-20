@@ -3,7 +3,7 @@ const MAX_TEXT_CHARS = 120_000;
 
 function config() {
   const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '').replace(/\/rest\/v1$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE || '';
   return url && key ? { url, key } : null;
 }
 
