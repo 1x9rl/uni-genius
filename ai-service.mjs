@@ -303,6 +303,19 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
         }
 
         if (response.ok) return { body: responseBody, model: candidateModel };
+
+        // Keep provider diagnostics useful without logging API keys, prompts, or request bodies.
+        if (!response.ok) {
+          console.error('Gemini API response error', {
+            model: candidateModel,
+            httpStatus: response.status,
+            providerStatus: typeof responseBody.error?.status === 'string' ? responseBody.error.status : undefined,
+            providerMessage: typeof responseBody.error?.message === 'string'
+              ? responseBody.error.message.slice(0, 500)
+              : undefined,
+          });
+        }
+
         if (response.status === 503 && attempt === 0) {
           console.warn('Gemini returned 503; retrying once', { model: candidateModel });
           await new Promise((resolve) => setTimeout(resolve, 900));
