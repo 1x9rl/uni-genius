@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CheckCircle2, CloudUpload, FileText, LockKeyhole, LoaderCircle, ShieldCheck, XCircle } from 'lucide-react';
 import { subjects } from './subjects';
 import * as pdfjsLib from 'pdfjs-dist';
+// @ts-expect-error Vite resolves this PDF.js worker asset at build time.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
