@@ -266,36 +266,49 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
       : [model, 'gemini-3.8-flash'];
 
     for (const candidateModel of modelsToTry) {
-      let response;
-      try {
-        response = await fetchImpl(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(geminiKey ? { 'x-goog-api-key': geminiKey } : {}),
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        let response;
+        try {
+          response = await fetchImpl(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(geminiKey ? { 'x-goog-api-key': geminiKey } : {}),
+              },
+              body: JSON.stringify(requestBody),
+              // Leave room for one bounded retry inside Vercel's 60-second function limit.
+              signal: AbortSignal.timeout(22_000),
             },
-            body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(30_000),
-          },
-        );
-      } catch (error) {
-        if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-          throw new ProviderError('gemini_timeout', 'Gemini took too long to respond. Retry when your connection is stable.', 504);
+          );
+        } catch (error) {
+          const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+          if (timedOut && attempt === 0) {
+            console.warn('Gemini request timed out; retrying once', { model: candidateModel });
+            await new Promise((resolve) => setTimeout(resolve, 900));
+            continue;
+          }
+          if (timedOut) {
+            throw new ProviderError('gemini_timeout', 'Gemini is taking too long right now. Please retry in a moment.', 504);
+          }
+          throw new ProviderError('gemini_unreachable', 'Could not reach Google Gemini. Check your internet connection and retry.', 502);
         }
-        throw new ProviderError('gemini_unreachable', 'Could not reach Google Gemini. Check your internet connection and retry.', 502);
-      }
 
-      let responseBody = {};
-      try {
-        responseBody = await response.json();
-      } catch {
-        responseBody = {};
-      }
+        let responseBody = {};
+        try {
+          responseBody = await response.json();
+        } catch {
+          responseBody = {};
+        }
 
-      if (response.ok) return { body: responseBody, model: candidateModel };
-      if (response.status !== 404 || candidateModel === modelsToTry.at(-1)) {
+        if (response.ok) return { body: responseBody, model: candidateModel };
+        if (response.status === 503 && attempt === 0) {
+          console.warn('Gemini returned 503; retrying once', { model: candidateModel });
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          continue;
+        }
+        if (response.status === 404 && candidateModel !== modelsToTry.at(-1)) break;
         throw providerError(response.status, responseBody.error?.message ?? '');
       }
     }
@@ -367,7 +380,8 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
         { role: 'user', parts },
       ],
       generationConfig: {
-        temperature: 0.2,
+        // Gemini 3.8 defaults to medium thinking; LOW keeps routine tutoring responsive.
+        thinkingConfig: { thinkingLevel: 'LOW' },
         maxOutputTokens: 2500,
       },
     });
