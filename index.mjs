@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAiService, extractAttachment, ProviderError, UserInputError } from './ai-service.mjs';
-import { cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
+import { checkCloudKnowledgeConnection, cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
 
 const app = express();
 app.use(express.json({ limit: '24mb' }));
@@ -15,16 +15,20 @@ const ai = createAiService({
 });
 
 app.get('/api/health', async (_request, response) => {
-  const provider = await ai.health();
+  const [provider, cloudKnowledge] = await Promise.all([
+    ai.health(),
+    checkCloudKnowledgeConnection(),
+  ]);
   response.json({
     ok: true,
     providerConfigured: provider.configured,
     provider: provider.provider,
     model: provider.model,
     cloudKnowledgeConfigured: cloudKnowledgeConfigured(),
+    cloudKnowledge,
     message: provider.configured
       ? ''
-      : 'Google Gemini is not configured. Add GEMINI_API_KEY in Replit Secrets to enable cloud AI.',
+      : 'Google Gemini is not configured. Add GEMINI_API_KEY in Vercel Environment Variables to enable cloud AI.',
   });
 });
 
