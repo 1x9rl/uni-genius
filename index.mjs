@@ -128,7 +128,18 @@ app.post('/api/chat', async (request, response) => {
   }
 
   try {
-    const cloudDocuments = await loadCloudCourseDocuments(subjectId);
+    // Cloud knowledge is an enhancement, not a dependency for the AI tutor.
+    // If Supabase is temporarily unavailable or its credentials need attention,
+    // keep Gemini and any user-provided local course documents working.
+    let cloudDocuments = [];
+    try {
+      cloudDocuments = await loadCloudCourseDocuments(subjectId);
+    } catch (cloudError) {
+      console.warn(
+        'Cloud course materials unavailable; continuing with chat and request materials.',
+        cloudError instanceof Error ? cloudError.message : 'unknown_cloud_error',
+      );
+    }
     const result = await ai.reply({
       message,
       subjectId,
