@@ -1,6 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CheckCircle2, CloudUpload, FileText, LockKeyhole, LoaderCircle, ShieldCheck, XCircle } from 'lucide-react';
 import { subjects } from './subjects';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+async function extractPdfInBrowser(file: File) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pages: string[] = [];
+  let totalChars = 0;
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => ('str' in item ? item.str : '')).filter(Boolean).join(' ').trim();
+    if (pageText) {
+      const chunk = `[Page ${pageNumber}]\\n${pageText}`;
+      pages.push(chunk);
+      totalChars += chunk.length;
+      if (totalChars > 120_000) break;
+    }
+  }
+  await pdf.destroy();
+  const text = pages.join('\\n\\n').slice(0, 120_000);
+  if (!text.trim()) throw new Error('ما لكيت نص قابل للتحديد داخل PDF. إذا الملزمة مصوّرة، تحتاج OCR قبل الاستيراد.');
+  return { text, pageCount: pdf.numPages };
+}
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
@@ -87,14 +112,32 @@ export function AdminImport() {
           chapter: chapter.trim(),
           materialType,
         });
-        const response = await fetch(`/api/admin/course-materials?${params.toString()}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            Authorization: `Bearer ${token.trim()}`,
-          },
-          body: file,
-        });
+        let response: Response;
+        if (/\\.pdf$/i.test(file.name)) {
+          // Parse large PDFs on the iPhone itself so the 9.3 MB file never hits Vercel's request-body limit.
+          const extracted = await extractPdfInBrowser(file);
+          response = await fetch('/api/admin/course-materials-text', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token.trim()}`,
+            },
+            body: JSON.stringify({
+              ...Object.fromEntries(params.entries()),
+              text: extracted.text,
+              pageCount: extracted.pageCount,
+            }),
+          });
+        } else {
+          response = await fetch(`/api/admin/course-materials?${params.toString()}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              Authorization: `Bearer ${token.trim()}`,
+            },
+            body: file,
+          });
+        }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const reason = data.message || (response.status === 401 ? 'رمز الاستيراد غير صحيح.' : 'فشل رفع الملف.');
