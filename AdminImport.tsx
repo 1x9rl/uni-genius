@@ -4,18 +4,6 @@ import { subjects } from './subjects';
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
-function readBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return reject(new Error('تعذرت قراءة الملف.'));
-      resolve(reader.result.slice(reader.result.indexOf(',') + 1));
-    };
-    reader.onerror = () => reject(new Error('تعذرت قراءة الملف.'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function mimeFor(file: File) {
   if (file.type) return file.type;
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -90,22 +78,22 @@ export function AdminImport() {
     setProgress({ done: 0, total: files.length });
     let imported = 0;
     try {
-      // Upload sequentially: avoids exceeding Vercel's JSON body limit on mobile networks.
+      // Send the original binary file; base64 JSON expands PDFs by about 33% and can hit Vercel's request limit.
       for (const file of files) {
-        const dataBase64 = await readBase64(file);
-        const response = await fetch('/api/admin/course-materials', {
+        const params = new URLSearchParams({
+          subjectId,
+          subjectLabel: selectedSubject.ar,
+          name: file.name,
+          chapter: chapter.trim(),
+          materialType,
+        });
+        const response = await fetch(`/api/admin/course-materials?${params.toString()}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.trim()}` },
-          body: JSON.stringify({
-            documents: [{
-              subjectId,
-              subjectLabel: selectedSubject.ar,
-              name: file.name,
-              chapter: chapter.trim(),
-              materialType,
-              attachment: { name: file.name, mimeType: mimeFor(file), dataBase64 },
-            }],
-          }),
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            Authorization: `Bearer ${token.trim()}`,
+          },
+          body: file,
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
