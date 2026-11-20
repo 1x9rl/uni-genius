@@ -10,7 +10,7 @@ app.use(express.json({ limit: '24mb' }));
 const port = Number(process.env.API_PORT || process.env.PORT || 8787);
 const ai = createAiService({
   apiKey: process.env.GEMINI_API_KEY || '',
-  model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
 });
 
 app.get('/api/health', async (_request, response) => {
