@@ -2,7 +2,10 @@
   "installCommand": "npm install --include=dev",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api" }],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/admin/import", "destination": "/" }
+  ],
   "functions": {
     "api/index.mjs": {
       "maxDuration": 60,
