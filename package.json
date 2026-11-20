@@ -10,7 +10,6 @@
     "server": "node --env-file-if-exists=.env index.mjs",
     "test:core": "tsc solver.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --outDir .core-test && node core.test.mjs",
     "test:ai": "node --test ai-service.test.mjs",
-    "test:browser": "node browser-smoke.mjs",
     "test": "npm run test:core && npm run test:ai"
   },
   "dependencies": {
