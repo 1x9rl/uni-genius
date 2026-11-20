@@ -8,7 +8,7 @@ function config() {
 }
 
 function headers(key, extra = {}) {
-  return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...extra };
+  return { apikey: key, ...(key.startsWith('sb_') ? {} : { Authorization: `Bearer ${key}` }), 'Content-Type': 'application/json', ...extra };
 }
 
 export function cloudKnowledgeConfigured() {
