@@ -259,14 +259,23 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
   const geminiKey = apiKey.trim();
 
   async function requestJson(requestBody) {
-    // If a deployment still pins an unavailable model, retry once with Google's
-    // current stable Flash model before returning an error to the student.
-    const modelsToTry = model === 'gemini-3.8-flash'
-      ? [model]
-      : [model, 'gemini-3.8-flash'];
+    // Prefer the configured model, then a current stable Flash model and a
+    // low-latency Flash-Lite fallback. A timeout on one model must not prevent
+    // the student from receiving an answer from another available model.
+    const modelsToTry = [...new Set([
+      model,
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
+    ].filter(Boolean))];
 
-    for (const candidateModel of modelsToTry) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+    let lastTimeout = false;
+    let lastUnavailable = null;
+
+    for (let modelIndex = 0; modelIndex < modelsToTry.length; modelIndex += 1) {
+      const candidateModel = modelsToTry[modelIndex];
+      const attemptsForModel = modelIndex === 0 ? 2 : 1;
+
+      for (let attempt = 0; attempt < attemptsForModel; attempt += 1) {
         let response;
         try {
           response = await fetchImpl(
@@ -278,19 +287,24 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
                 ...(geminiKey ? { 'x-goog-api-key': geminiKey } : {}),
               },
               body: JSON.stringify(requestBody),
-              // Leave room for one bounded retry inside Vercel's 60-second function limit.
-              signal: AbortSignal.timeout(22_000),
+              // Keep the full fallback chain comfortably inside Vercel's 60s limit.
+              signal: AbortSignal.timeout(12_000),
             },
           );
         } catch (error) {
           const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
-          if (timedOut && attempt === 0) {
-            console.warn('Gemini request timed out; retrying once', { model: candidateModel });
-            await new Promise((resolve) => setTimeout(resolve, 900));
-            continue;
-          }
           if (timedOut) {
-            throw new ProviderError('gemini_timeout', 'Gemini is taking too long right now. Please retry in a moment.', 504);
+            lastTimeout = true;
+            console.warn('Gemini model timed out', {
+              model: candidateModel,
+              attempt: attempt + 1,
+              willFallback: modelIndex < modelsToTry.length - 1,
+            });
+            if (attempt === 0 && attemptsForModel > 1) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              continue;
+            }
+            break;
           }
           throw new ProviderError('gemini_unreachable', 'Could not reach Google Gemini. Check your internet connection and retry.', 502);
         }
@@ -305,27 +319,36 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
         if (response.ok) return { body: responseBody, model: candidateModel };
 
         // Keep provider diagnostics useful without logging API keys, prompts, or request bodies.
-        if (!response.ok) {
-          console.error('Gemini API response error', {
-            model: candidateModel,
-            httpStatus: response.status,
-            providerStatus: typeof responseBody.error?.status === 'string' ? responseBody.error.status : undefined,
-            providerMessage: typeof responseBody.error?.message === 'string'
-              ? responseBody.error.message.slice(0, 500)
-              : undefined,
-          });
-        }
+        console.error('Gemini API response error', {
+          model: candidateModel,
+          httpStatus: response.status,
+          providerStatus: typeof responseBody.error?.status === 'string' ? responseBody.error.status : undefined,
+          providerMessage: typeof responseBody.error?.message === 'string'
+            ? responseBody.error.message.slice(0, 500)
+            : undefined,
+        });
 
-        if (response.status === 503 && attempt === 0) {
-          console.warn('Gemini returned 503; retrying once', { model: candidateModel });
-          await new Promise((resolve) => setTimeout(resolve, 900));
+        if ((response.status === 503 || response.status === 504) && attempt === 0 && attemptsForModel > 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
-        if (response.status === 404 && candidateModel !== modelsToTry.at(-1)) break;
+        if (response.status === 404 || response.status === 503 || response.status === 504) {
+          lastUnavailable = providerError(response.status, responseBody.error?.message ?? '');
+          break;
+        }
         throw providerError(response.status, responseBody.error?.message ?? '');
       }
     }
-    throw new ProviderError('gemini_model_unavailable', 'No available Gemini model could serve this API key. Check the model access in Google AI Studio.', 503);
+
+    if (lastTimeout) {
+      throw new ProviderError(
+        'gemini_timeout',
+        'Gemini is temporarily slow across the available models. Please retry in a moment.',
+        504,
+      );
+    }
+    if (lastUnavailable) throw lastUnavailable;
+    throw new ProviderError('gemini_model_unavailable', 'No available Gemini model could serve this API key. Check model access in Google AI Studio.', 503);
   }
 
   async function health() {
