@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, CheckCircle2, CloudUpload, FileText, LockKeyhole, LoaderCircle, ShieldCheck, XCircle } from 'lucide-react';
 import { subjects } from './subjects';
 
@@ -32,11 +32,42 @@ export function AdminImport() {
   const [materialType, setMaterialType] = useState('lecture');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [cloudState, setCloudState] = useState<'checking' | 'ready' | 'disconnected'>('checking');
+  const [cloudMessage, setCloudMessage] = useState('جارٍ فحص اتصال قاعدة المعرفة السحابية...');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectedSubject = subjects.find((subject) => subject.id === subjectId) ?? subjects[0];
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/health', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!active) return;
+        if (data?.cloudKnowledge?.connected) {
+          setCloudState('ready');
+          setCloudMessage('قاعدة المعرفة السحابية متصلة وجاهزة لاستقبال المواد.');
+        } else {
+          setCloudState('disconnected');
+          const error = data?.cloudKnowledge?.error;
+          setCloudMessage(error === 'database_authentication_failed'
+            ? 'قاعدة البيانات موجودة، لكن مفتاح الاتصال مرفوض. لن نبدأ الرفع حتى يُصلح الاتصال.'
+            : error === 'course_documents_table_missing'
+              ? 'جدول المواد الدراسية غير موجود في Supabase.'
+              : 'قاعدة المعرفة السحابية غير متصلة حالياً. تحقق من إعدادات الخادم.');
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setCloudState('disconnected');
+        setCloudMessage('تعذر فحص اتصال قاعدة المعرفة. تحقق من اتصال الإنترنت ثم أعد تحميل الصفحة.');
+      });
+    return () => { active = false; };
+  }, []);
+
+
 
   function addFiles(incoming: FileList | null) {
     if (!incoming) return;
@@ -105,6 +136,11 @@ export function AdminImport() {
           <p style={{ color: '#a7b8cc', lineHeight: 1.8, margin: 0 }}>ارفع ملازمك ومحاضراتك مرة واحدة. ستُربط كل مادة بمكتبتها السحابية ليستخدمها المساعد تلقائياً عند الإجابة.</p>
         </header>
 
+        <div role="status" style={{ marginBottom: 16, borderRadius: 12, padding: 14, border: `1px solid ${cloudState === 'ready' ? '#286b56' : cloudState === 'checking' ? '#42617c' : '#8a4b51'}`, background: cloudState === 'ready' ? '#12382f' : cloudState === 'checking' ? '#101f30' : '#3b252b', color: cloudState === 'ready' ? '#9de7c7' : cloudState === 'checking' ? '#b9c9da' : '#ffc1c1', lineHeight: 1.7 }}>
+          <b>{cloudState === 'ready' ? '✓ اتصال السحابة جاهز' : cloudState === 'checking' ? '◌ فحص الاتصال' : '⚠ مشكلة في اتصال السحابة'}</b>
+          <div>{cloudMessage}</div>
+        </div>
+
         <section style={{ background: '#101f30', border: '1px solid #263a50', borderRadius: 18, padding: 20, display: 'grid', gap: 18 }}>
           <label style={{ display: 'grid', gap: 8 }}>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 700 }}><LockKeyhole size={17}/> رمز الاستيراد الخاص</span>
@@ -158,7 +194,7 @@ export function AdminImport() {
             {result.kind === 'success' ? <CheckCircle2 size={19}/> : <XCircle size={19}/>}<span>{result.text}</span>
           </div>}
 
-          <button type="button" onClick={() => void upload()} disabled={!token.trim() || !files.length || busy} style={{ ...buttonStyle, width: '100%', opacity: !token.trim() || !files.length || busy ? .45 : 1, cursor: !token.trim() || !files.length || busy ? 'not-allowed' : 'pointer' }}>
+          <button type="button" onClick={() => void upload()} disabled={!token.trim() || !files.length || busy || cloudState !== 'ready'} style={{ ...buttonStyle, width: '100%', opacity: !token.trim() || !files.length || busy || cloudState !== 'ready' ? .45 : 1, cursor: !token.trim() || !files.length || busy || cloudState !== 'ready' ? 'not-allowed' : 'pointer' }}>
             {busy ? 'جارٍ الرفع...' : `استيراد ${files.length || ''} ملف إلى قاعدة المعرفة`}
           </button>
         </section>
