@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAiService, extractAttachment, ProviderError, UserInputError } from './ai-service.mjs';
+import { cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
 
 const app = express();
 app.use(express.json({ limit: '24mb' }));
@@ -20,6 +21,7 @@ app.get('/api/health', async (_request, response) => {
     providerConfigured: provider.configured,
     provider: provider.provider,
     model: provider.model,
+    cloudKnowledgeConfigured: cloudKnowledgeConfigured(),
     message: provider.configured
       ? ''
       : 'Google Gemini is not configured. Add GEMINI_API_KEY in Replit Secrets to enable cloud AI.',
@@ -43,6 +45,44 @@ app.post('/api/extract', async (request, response) => {
       error: 'document_extraction_failed',
       message: 'The document could not be read. Check the file and try again.',
     });
+  }
+});
+
+app.post('/api/admin/course-materials', async (request, response) => {
+  const expectedToken = process.env.COURSE_IMPORT_TOKEN || '';
+  const suppliedToken = request.get('authorization') || '';
+  if (!expectedToken || suppliedToken !== `Bearer ${expectedToken}`) {
+    return response.status(401).json({ error: 'unauthorized', message: 'A valid course import token is required.' });
+  }
+  const entries = request.body?.documents;
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 10) {
+    return response.status(400).json({ error: 'invalid_import_batch', message: 'Send between 1 and 10 documents per batch.' });
+  }
+  try {
+    const documents = [];
+    for (const entry of entries) {
+      const extracted = await extractAttachment(entry?.attachment);
+      if (extracted.kind !== 'text') {
+        throw new UserInputError('text_document_required', 'The course library importer accepts text-based PDF, DOCX, TXT, and MD files.');
+      }
+      documents.push({
+        subjectId: entry.subjectId,
+        subjectLabel: entry.subjectLabel,
+        name: entry.name || extracted.name,
+        chapter: entry.chapter,
+        materialType: entry.materialType,
+        text: extracted.text,
+        pageCount: (extracted.text.match(/\[Page \d+\]/g) || []).length,
+      });
+    }
+    const result = await saveCloudCourseDocuments(documents);
+    return response.status(201).json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof UserInputError) {
+      return response.status(error.status).json({ error: error.code, message: error.message });
+    }
+    console.error('Cloud course import failed:', error);
+    return response.status(503).json({ error: 'cloud_import_unavailable', message: error.message || 'Cloud import is not configured.' });
   }
 });
 
@@ -84,6 +124,7 @@ app.post('/api/chat', async (request, response) => {
   }
 
   try {
+    const cloudDocuments = await loadCloudCourseDocuments(subjectId);
     const result = await ai.reply({
       message,
       subjectId,
@@ -91,7 +132,7 @@ app.post('/api/chat', async (request, response) => {
       language,
       history,
       attachment,
-      courseDocuments,
+      courseDocuments: [...cloudDocuments, ...courseDocuments],
     });
     return response.json(result);
   } catch (error) {

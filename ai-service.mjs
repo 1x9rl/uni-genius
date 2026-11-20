@@ -194,7 +194,7 @@ function documentPassages(text) {
 export function retrieveCoursePassages(question, documents = []) {
   const terms = searchTerms(question);
   const matches = [];
-  const safeDocuments = Array.isArray(documents) ? documents.slice(0, 20) : [];
+  const safeDocuments = Array.isArray(documents) ? documents.slice(0, 200) : [];
   if (terms.size === 0) return { passages: [], sources: [] };
 
   for (const document of safeDocuments) {
@@ -373,7 +373,7 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
     }
 
     const extracted = attachment ? await extractAttachment(attachment) : null;
-    const documents = Array.isArray(courseDocuments) ? courseDocuments.slice(0, 20) : [];
+    const documents = Array.isArray(courseDocuments) ? courseDocuments.slice(0, 200) : [];
     if (extracted?.kind === 'text') {
       documents.unshift({ name: extracted.name, text: extracted.text });
     }
