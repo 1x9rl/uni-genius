@@ -27,4 +27,9 @@ function App(){const[page,setPage]=useState('home'),[subject,setSubject]=useStat
  function addTask(){if(!task.trim())return;setTasks(a=>[{id:Date.now(),text:task.trim(),done:false,date:new Date().toLocaleDateString(isAr?'ar-IQ':'en-US')},...a]);setTask('')}
 }
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+const root = createRoot(document.getElementById('root')!);
+if (window.location.pathname === '/admin/import') {
+  import('./AdminImport').then(({ AdminImport }) => root.render(<React.StrictMode><AdminImport /></React.StrictMode>));
+} else {
+  root.render(<React.StrictMode><App /></React.StrictMode>);
+}
