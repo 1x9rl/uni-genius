@@ -55,8 +55,8 @@ export function AdminImport() {
           setCloudMessage(error === 'database_authentication_failed'
             ? 'قاعدة البيانات موجودة، لكن مفتاح الاتصال مرفوض. لن نبدأ الرفع حتى يُصلح الاتصال.'
             : error === 'course_documents_table_missing'
-              ? 'جدول المواد الدراسية غير موجود في Supabase.'
-              : 'قاعدة المعرفة السحابية غير متصلة حالياً. تحقق من إعدادات الخادم.');
+              ? 'جدول المواد الدراسية غير موجود في Neon. شغّل ملف neon/course_documents.sql أولاً.'
+              : 'قاعدة المعرفة السحابية غير متصلة حالياً. تحقق من DATABASE_URL وإعدادات Neon في الخادم.');
         }
       })
       .catch(() => {
