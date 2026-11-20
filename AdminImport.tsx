@@ -16,14 +16,14 @@ async function extractPdfInBrowser(file: File) {
     const content = await page.getTextContent();
     const pageText = content.items.map((item) => ('str' in item ? item.str : '')).filter(Boolean).join(' ').trim();
     if (pageText) {
-      const chunk = `[Page ${pageNumber}]\\n${pageText}`;
+      const chunk = `[Page ${pageNumber}]\n${pageText}`;
       pages.push(chunk);
       totalChars += chunk.length;
       if (totalChars > 120_000) break;
     }
   }
   await pdf.destroy();
-  const text = pages.join('\\n\\n').slice(0, 120_000);
+  const text = pages.join('\n\n').slice(0, 120_000);
   if (!text.trim()) throw new Error('ما لكيت نص قابل للتحديد داخل PDF. إذا الملزمة مصوّرة، تحتاج OCR قبل الاستيراد.');
   return { text, pageCount: pdf.numPages };
 }
@@ -114,7 +114,7 @@ export function AdminImport() {
           materialType,
         });
         let response: Response;
-        if (/\\.pdf$/i.test(file.name)) {
+        if (/\.pdf$/i.test(file.name)) {
           // Parse large PDFs on the iPhone itself so the 9.3 MB file never hits Vercel's request-body limit.
           const extracted = await extractPdfInBrowser(file);
           response = await fetch('/api/admin/course-materials-text', {
