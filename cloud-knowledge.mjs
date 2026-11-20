@@ -3,7 +3,8 @@ const MAX_TEXT_CHARS = 120_000;
 
 function config() {
   const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '').replace(/\/rest\/v1$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE || '';
+  // Prefer the current Supabase Secret API key; retain the legacy variable as fallback.
+  const key = process.env.SUPABASE_SERVICE || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   return url && key ? { url, key } : null;
 }
 
@@ -39,7 +40,7 @@ export async function checkCloudKnowledgeConnection(fetchImpl = fetch) {
 
 export async function saveCloudCourseDocuments(documents, fetchImpl = fetch) {
   const cfg = config();
-  if (!cfg) throw new Error('Cloud knowledge storage is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+  if (!cfg) throw new Error('Cloud knowledge storage is not configured. Add SUPABASE_URL and SUPABASE_SERVICE.'); 
   if (!Array.isArray(documents) || !documents.length || documents.length > 50) {
     throw new Error('Send between 1 and 50 course documents per import batch.');
   }
