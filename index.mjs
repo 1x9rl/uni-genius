@@ -52,6 +52,36 @@ app.post('/api/extract', async (request, response) => {
   }
 });
 
+app.post('/api/admin/course-materials-text', async (request, response) => {
+  const expectedToken = process.env.COURSE_IMPORT_TOKEN || '';
+  const suppliedToken = request.get('authorization') || '';
+  if (!expectedToken || suppliedToken !== `Bearer ${expectedToken}`) {
+    return response.status(401).json({ error: 'unauthorized', message: 'A valid course import token is required.' });
+  }
+  try {
+    const { name, subjectId, subjectLabel, chapter, materialType, text, pageCount } = request.body || {};
+    if (typeof text !== 'string' || !text.trim()) {
+      return response.status(400).json({ error: 'empty_document', message: 'No selectable text was found in this PDF. Scanned PDFs need OCR before import.' });
+    }
+    if (text.length > 120_000) {
+      return response.status(413).json({ error: 'extracted_text_too_large', message: 'The extracted text is too large. Split this PDF into smaller parts.' });
+    }
+    const result = await saveCloudCourseDocuments([{
+      subjectId: typeof subjectId === 'string' ? subjectId : '',
+      subjectLabel: typeof subjectLabel === 'string' ? subjectLabel : subjectId,
+      name: typeof name === 'string' ? name.slice(0, 180) : 'course-material.pdf',
+      chapter: typeof chapter === 'string' ? chapter : '',
+      materialType: typeof materialType === 'string' ? materialType : 'lecture',
+      text: text.trim(),
+      pageCount: Number.isInteger(pageCount) ? pageCount : 0,
+    }]);
+    return response.status(201).json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Cloud course text import failed:', error);
+    return response.status(503).json({ error: 'cloud_import_unavailable', message: error.message || 'Cloud import is not configured.' });
+  }
+});
+
 app.post('/api/admin/course-materials', express.raw({ type: 'application/octet-stream', limit: '15mb' }), async (request, response) => {
   const expectedToken = process.env.COURSE_IMPORT_TOKEN || '';
   const suppliedToken = request.get('authorization') || '';
