@@ -2,7 +2,7 @@ const MAX_DOCUMENTS_PER_SUBJECT = 200;
 const MAX_TEXT_CHARS = 120_000;
 
 function config() {
-  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '').replace(/\/rest\/v1$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   return url && key ? { url, key } : null;
 }
@@ -13,6 +13,28 @@ function headers(key, extra = {}) {
 
 export function cloudKnowledgeConfigured() {
   return Boolean(config());
+}
+
+export async function checkCloudKnowledgeConnection(fetchImpl = fetch) {
+  const cfg = config();
+  if (!cfg) return { configured: false, connected: false, tableAvailable: false };
+  try {
+    const response = await fetchImpl(`${cfg.url}/rest/v1/course_documents?select=id&limit=1`, {
+      headers: headers(cfg.key),
+    });
+    if (response.ok) return { configured: true, connected: true, tableAvailable: true };
+    // Keep diagnostics safe: never return provider response bodies or credentials.
+    return {
+      configured: true,
+      connected: false,
+      tableAvailable: response.status !== 404,
+      error: response.status === 401 || response.status === 403
+        ? 'database_authentication_failed'
+        : response.status === 404 ? 'course_documents_table_missing' : 'database_request_failed',
+    };
+  } catch {
+    return { configured: true, connected: false, tableAvailable: false, error: 'database_network_error' };
+  }
 }
 
 export async function saveCloudCourseDocuments(documents, fetchImpl = fetch) {
