@@ -52,34 +52,34 @@ app.post('/api/extract', async (request, response) => {
   }
 });
 
-app.post('/api/admin/course-materials', async (request, response) => {
+app.post('/api/admin/course-materials', express.raw({ type: 'application/octet-stream', limit: '15mb' }), async (request, response) => {
   const expectedToken = process.env.COURSE_IMPORT_TOKEN || '';
   const suppliedToken = request.get('authorization') || '';
   if (!expectedToken || suppliedToken !== `Bearer ${expectedToken}`) {
     return response.status(401).json({ error: 'unauthorized', message: 'A valid course import token is required.' });
   }
-  const entries = request.body?.documents;
-  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 10) {
-    return response.status(400).json({ error: 'invalid_import_batch', message: 'Send between 1 and 10 documents per batch.' });
+  if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
+    return response.status(400).json({ error: 'empty_upload', message: 'The uploaded file is empty. Select it again.' });
   }
   try {
-    const documents = [];
-    for (const entry of entries) {
-      const extracted = await extractAttachment(entry?.attachment);
-      if (extracted.kind !== 'text') {
-        throw new UserInputError('text_document_required', 'The course library importer accepts text-based PDF, DOCX, TXT, and MD files.');
-      }
-      documents.push({
-        subjectId: entry.subjectId,
-        subjectLabel: entry.subjectLabel,
-        name: entry.name || extracted.name,
-        chapter: entry.chapter,
-        materialType: entry.materialType,
-        text: extracted.text,
-        pageCount: (extracted.text.match(/\[Page \d+\]/g) || []).length,
-      });
+    const name = typeof request.query.name === 'string' ? request.query.name.slice(0, 180) : 'course-material.pdf';
+    const extracted = await extractAttachment({
+      name,
+      mimeType: 'application/octet-stream',
+      dataBase64: request.body.toString('base64'),
+    });
+    if (extracted.kind !== 'text') {
+      throw new UserInputError('text_document_required', 'The course library importer accepts text-based PDF, DOCX, TXT, and MD files.');
     }
-    const result = await saveCloudCourseDocuments(documents);
+    const subjectId = typeof request.query.subjectId === 'string' ? request.query.subjectId : '';
+    const subjectLabel = typeof request.query.subjectLabel === 'string' ? request.query.subjectLabel : subjectId;
+    const chapter = typeof request.query.chapter === 'string' ? request.query.chapter : '';
+    const materialType = typeof request.query.materialType === 'string' ? request.query.materialType : 'lecture';
+    const result = await saveCloudCourseDocuments([{
+      subjectId, subjectLabel, name, chapter, materialType,
+      text: extracted.text,
+      pageCount: (extracted.text.match(/\\[Page \\d+\\]/g) || []).length,
+    }]);
     return response.status(201).json({ ok: true, ...result });
   } catch (error) {
     if (error instanceof UserInputError) {
