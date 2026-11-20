@@ -31,7 +31,7 @@ POST `/api/admin/course-materials` with header `Authorization: Bearer <COURSE_IM
   }]
 }
 ```
-Send up to 50 files per batch; each file must be 15 MB or smaller and supported by the existing extractor (text PDF, DOCX, TXT, MD). The importer stores extracted text and page markers, not the original binary file. Repeat batches for larger collections. Scanned PDFs need OCR before import.
+Send up to 10 files per request; each file must be 15 MB or smaller, and the entire JSON request must fit the server's 24 MB body limit. Supported formats are text PDF, DOCX, TXT, and MD. The importer stores extracted text and page markers, not the original binary file. Repeat requests for larger collections. Scanned PDFs need OCR before import.
 
 ## Important
 
