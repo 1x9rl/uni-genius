@@ -259,35 +259,47 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
   const geminiKey = apiKey.trim();
 
   async function requestJson(requestBody) {
-    let response;
-    try {
-      response = await fetchImpl(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(geminiKey ? { 'x-goog-api-key': geminiKey } : {}),
-          },
-          body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-    } catch (error) {
-      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-        throw new ProviderError('gemini_timeout', 'Gemini took too long to respond. Retry when your connection is stable.', 504);
-      }
-      throw new ProviderError('gemini_unreachable', 'Could not reach Google Gemini. Check your internet connection and retry.', 502);
-    }
+    // If a deployment still pins an unavailable model, retry once with Google's
+    // current stable Flash model before returning an error to the student.
+    const modelsToTry = model === 'gemini-3.8-flash'
+      ? [model]
+      : [model, 'gemini-3.8-flash'];
 
-    let responseBody = {};
-    try {
-      responseBody = await response.json();
-    } catch {
-      responseBody = {};
+    for (const candidateModel of modelsToTry) {
+      let response;
+      try {
+        response = await fetchImpl(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidateModel)}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(geminiKey ? { 'x-goog-api-key': geminiKey } : {}),
+            },
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(30_000),
+          },
+        );
+      } catch (error) {
+        if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+          throw new ProviderError('gemini_timeout', 'Gemini took too long to respond. Retry when your connection is stable.', 504);
+        }
+        throw new ProviderError('gemini_unreachable', 'Could not reach Google Gemini. Check your internet connection and retry.', 502);
+      }
+
+      let responseBody = {};
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = {};
+      }
+
+      if (response.ok) return { body: responseBody, model: candidateModel };
+      if (response.status !== 404 || candidateModel === modelsToTry.at(-1)) {
+        throw providerError(response.status, responseBody.error?.message ?? '');
+      }
     }
-    if (!response.ok) throw providerError(response.status, responseBody.error?.message ?? '');
-    return responseBody;
+    throw new ProviderError('gemini_model_unavailable', 'No available Gemini model could serve this API key. Check the model access in Google AI Studio.', 503);
   }
 
   async function health() {
@@ -346,7 +358,7 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
       });
     }
 
-    const body = await requestJson({
+    const { body, model: usedModel } = await requestJson({
       system_instruction: {
         parts: [{ text: buildEngineeringPrompt({ subjectId, mode, language }) }],
       },
@@ -366,7 +378,7 @@ export function createAiService({ apiKey = '', model = 'gemini-2.5-flash', fetch
     if (typeof text !== 'string' || !text.trim()) {
       throw new ProviderError('gemini_empty_response', 'Gemini returned no answer. The request may have been blocked; revise it and retry.', 502);
     }
-    return { answer: text.trim(), model, sources: retrieval.sources };
+    return { answer: text.trim(), model: usedModel, sources: retrieval.sources };
   }
 
   return { health, reply };
