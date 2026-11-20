@@ -72,7 +72,7 @@ app.post('/api/admin/course-materials', async (request, response) => {
         chapter: entry.chapter,
         materialType: entry.materialType,
         text: extracted.text,
-        pageCount: (extracted.text.match(/\\[Page \\d+\\]/g) || []).length,
+        pageCount: (extracted.text.match(/\[Page \d+\]/g) || []).length,
       });
     }
     const result = await saveCloudCourseDocuments(documents);
