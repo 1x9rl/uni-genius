@@ -1,6 +1,6 @@
 import { buildEngineeringPrompt, extractAttachment, retrieveCoursePassages } from './ai-service.mjs';
 
-export function createGroqService({ apiKey = '', model = 'llama-3.3-70b-versatile', fetchImpl = fetch }) {
+export function createGroqService({ apiKey = '', model = 'qwen/qwen3.8-27b', fetchImpl = fetch }) {
   const groqKey = apiKey.trim();
 
   async function health() {
