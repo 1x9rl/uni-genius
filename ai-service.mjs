@@ -191,6 +191,20 @@ function documentPassages(text) {
   return passages;
 }
 
+// Reuse the page-aware passage split and token sets while a cached course document stays in memory.
+const cachedDocumentSearch = new WeakMap();
+
+function getDocumentSearchIndex(document) {
+  const cached = cachedDocumentSearch.get(document);
+  if (cached) return cached;
+  const passages = documentPassages(document.text.slice(0, MAX_EXTRACTED_CHARS)).map((passage) => ({
+    ...passage,
+    terms: searchTerms(passage.text),
+  }));
+  cachedDocumentSearch.set(document, passages);
+  return passages;
+}
+
 export function retrieveCoursePassages(question, documents = []) {
   const terms = searchTerms(question);
   const matches = [];
@@ -200,11 +214,8 @@ export function retrieveCoursePassages(question, documents = []) {
   for (const document of safeDocuments) {
     if (!document || typeof document.name !== 'string' || typeof document.text !== 'string') continue;
     const name = document.name.slice(0, 180);
-    const text = document.text.slice(0, MAX_EXTRACTED_CHARS);
-
-    for (const passage of documentPassages(text)) {
-      const passageTerms = searchTerms(passage.text);
-      const overlap = [...terms].filter((term) => passageTerms.has(term));
+    for (const passage of getDocumentSearchIndex(document)) {
+      const overlap = [...terms].filter((term) => passage.terms.has(term));
       if (overlap.length === 0) continue;
       const labels = [
         name,
