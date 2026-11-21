@@ -149,6 +149,31 @@ app.post('/api/admin/course-materials', express.raw({ type: 'application/octet-s
   }
 });
 
+app.get('/api/course-materials', async (request, response) => {
+  const subjectId = typeof request.query.subjectId === 'string' ? request.query.subjectId : '';
+  if (!/^[a-z0-9_-]{1,120}$/i.test(subjectId)) {
+    return response.status(400).json({ error: 'invalid_subject', message: 'Select a valid course subject.' });
+  }
+  try {
+    const documents = await loadCloudCourseDocuments(subjectId);
+    return response.json({
+      subjectId,
+      documents: documents.map((doc, index) => ({
+        id: `${subjectId}-${index}-${doc.name}`,
+        name: doc.name,
+        subjectLabel: doc.subject || subjectId,
+        chapter: doc.chapter || '',
+        text: doc.text,
+        pages: (doc.text.match(/\\[Page \\d+\\]/g) || []).length,
+        added: '',
+      })),
+    });
+  } catch (error) {
+    console.error('Offline course download failed:', error);
+    return response.status(503).json({ error: 'course_download_unavailable', message: 'Could not download this course right now.' });
+  }
+});
+
 app.post('/api/chat', async (request, response) => {
   const {
     message = '',
