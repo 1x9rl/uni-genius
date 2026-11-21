@@ -16,7 +16,7 @@ const ai = createAiService({
 });
 const groq = createGroqService({
   apiKey: process.env.GROQ_API_KEY || '',
-  model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  model: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
 });
 
 app.get('/api/health', async (_request, response) => {
