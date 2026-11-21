@@ -67,7 +67,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const isArabic = lang === 'ar';
   const t = (ar: string, en: string) => isArabic ? ar : en;
   const currentSubject = subjects.find((item) => item.id === subject) ?? subjects[0];
-  const [messagesBySubject, setMessagesBySubject] = useState<Record<string, ChatMessageRecord[]>>(() => read('messagesBySubject', {}));
+  const [messagesBySubject, setMessagesBySubject] = useState<Record<string, ChatMessageRecord[]>>(() => read<Record<string, ChatMessageRecord[]>>('messagesBySubject', {}));
   const messages = messagesBySubject[subject] ?? [];
 
   function updateSubjectMessages(
