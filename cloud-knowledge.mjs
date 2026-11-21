@@ -5,6 +5,8 @@ const MAX_TEXT_CHARS = 120_000;
 
 let cachedSql;
 let cachedUrl = '';
+const COURSE_DOCUMENT_CACHE_TTL_MS = 60_000;
+const cachedCourseDocuments = new Map();
 
 function config() {
   const url = (process.env.DATABASE_URL || '').trim();
@@ -87,6 +89,7 @@ export async function saveCloudCourseDocuments(documents) {
     `;
     imported += 1;
   }
+  for (const row of rows) cachedCourseDocuments.delete(row.subject_id);
   return { imported };
 }
 
@@ -94,6 +97,11 @@ export async function loadCloudCourseDocuments(subjectId) {
   const sql = database();
   if (!sql) return [];
   if (typeof subjectId !== 'string' || !/^[a-z0-9_-]{1,120}$/i.test(subjectId)) return [];
+
+  const cached = cachedCourseDocuments.get(subjectId);
+  if (cached && Date.now() - cached.cachedAt < COURSE_DOCUMENT_CACHE_TTL_MS) {
+    return cached.documents;
+  }
 
   const rows = await sql`
     SELECT subject_id, subject_label, name, chapter, content_text, page_count
@@ -103,10 +111,12 @@ export async function loadCloudCourseDocuments(subjectId) {
     LIMIT ${MAX_DOCUMENTS_PER_SUBJECT}
   `;
 
-  return rows.map((row) => ({
+  const documents = rows.map((row) => ({
     name: row.name,
     subject: row.subject_label,
     chapter: row.chapter,
     text: row.content_text,
   }));
+  cachedCourseDocuments.set(subjectId, { documents, cachedAt: Date.now() });
+  return documents;
 }
