@@ -61,7 +61,7 @@ app.post('/api/extract', async (request, response) => {
 });
 
 app.post('/api/transcribe', express.raw({
-  type: (request) => /^audio\\//i.test(request.headers['content-type'] || ''),
+  type: (request) => (request.headers['content-type'] || '').toLowerCase().startsWith('audio/'),
   limit: '15mb',
 }), async (request, response) => {
   if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
