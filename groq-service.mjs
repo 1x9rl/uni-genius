@@ -48,7 +48,7 @@ export function createGroqService({ apiKey = '', model = 'qwen/qwen3.8-27b', fet
       response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + groqKey },
-        body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 2500 }),
+        body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 950 }),
         signal: AbortSignal.timeout(25_000),
       });
     } catch {
