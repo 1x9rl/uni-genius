@@ -5,3 +5,39 @@
 @media(max-width:720px){.sidebar{position:fixed;inset-block:0;inset-inline-start:0;transform:translateX(110%);transition:.25s;width:275px;box-shadow:var(--shadow)}html[dir=ltr] .sidebar{transform:translateX(-110%)}.sidebar.open{transform:translateX(0)!important}.close-menu,.menu-btn{display:inline-grid!important}.topbar{height:60px;padding:0 15px}.top-left,.top-actions{gap:7px}.crumb{font-size:9px}.connection{font-size:0;padding:7px}.connection svg{width:16px}.content{padding:17px 14px 28px}.welcome{padding:25px 22px;min-height:255px}.welcome h1{font-size:26px}.welcome p{font-size:11px;max-width:95%}.orbital{position:absolute;opacity:.2;left:-35px;bottom:-35px;transform:scale(.8)}html[dir=rtl] .orbital{left:auto;right:-35px}.stats{gap:8px;margin:12px 0 25px}.stat-card{padding:11px;gap:8px}.stat-icon{width:34px;height:34px}.stat-card strong{font-size:17px}.stat-card small,.stat-card em{font-size:8px}.section-head h2{font-size:17px}.subject-grid{gap:8px}.subject-card{padding:12px;min-height:165px}.subject-card h3{font-size:11px}.subject-card p{font-size:9px}.bottom-grid{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(2,1fr)}.page-heading h1{font-size:24px}.page-heading p{line-height:1.7}.tutor-layout,.solver-layout,.library-layout{grid-template-columns:1fr}.tutor-aside{grid-template-columns:1fr}.chat-panel{min-height:620px}.messages{padding:14px;max-height:430px}.chat-context{gap:6px}.chat-context label{font-size:7px}.chat-context select{font-size:9px;max-width:42%}.bubble{max-width:90%}.bubble p{font-size:11px}.input-grid{grid-template-columns:1fr 1fr}.upload-panel{flex-wrap:wrap}.upload-panel>label{margin-inline-start:auto}.footer{padding:14px;gap:7px;flex-wrap:wrap;font-size:8px}.quiz-panel{padding:19px}.diag-row{align-items:flex-start}.status-pill{font-size:8px}.top-avatar{width:29px;height:29px}}
 
 .course-docs{flex-direction:column;align-items:stretch;gap:12px}.course-docs-head{display:flex;align-items:center;gap:15px}.course-docs-head>div:nth-child(2){flex:1}.course-docs-form{display:flex;gap:9px;flex-wrap:wrap}.chapter-input{flex:1;min-width:150px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);outline:0;font-size:11px}.chapter-input:focus{border-color:var(--cyan)}.secondary-btn.is-busy{opacity:.6;pointer-events:none}.doc-ok{padding:9px;border-radius:8px;background:#1d696b30;color:var(--green);font-size:11px;line-height:1.7}.course-docs-list{display:grid;gap:2px}.doc-empty{font-size:10px;color:var(--muted);margin:2px 0}.doc-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);color:var(--cyan)}.doc-row>div{flex:1;min-width:0}.doc-row b{display:block;font-size:11px;color:var(--text);overflow-wrap:anywhere}.doc-row small{display:block;font-size:9px;color:var(--muted);margin-top:3px}.answer-sources{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;padding-top:8px;border-top:1px solid var(--border);align-items:center}.answer-sources b{display:flex;align-items:center;gap:4px;font:700 8px Inter;color:var(--green);letter-spacing:.5px;width:100%}.answer-sources span{font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:3px 6px;overflow-wrap:anywhere}
+
+
+/* Voice conversation controls */
+.speak-answer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--line, rgba(148, 163, 184, .24));
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .08);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.speak-answer-btn:active { transform: scale(.98); }
+.icon-btn.recording {
+  color: #ef4444;
+  background: rgba(239, 68, 68, .12);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+}
+.spin { animation: voice-spin 1s linear infinite; }
+@keyframes voice-spin { to { transform: rotate(360deg); } }
+@keyframes voice-pulse {
+  50% { box-shadow: 0 0 0 5px rgba(239, 68, 68, .12); }
+}
