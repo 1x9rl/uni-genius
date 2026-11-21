@@ -237,7 +237,6 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
       }
       const sources = Array.isArray(data.sources) ? data.sources.filter((item: unknown): item is string => typeof item === 'string') : [];
       updateSubjectMessages(request.subjectId, (previous) => [...previous, { role: 'assistant', text: data.answer, ...(sources.length ? { sources } : {}) }]);
-      speak(data.answer);
       setAiStatus('ready');
       setAiModel(data.model || 'Gemini');
       setHealthMessage('');
