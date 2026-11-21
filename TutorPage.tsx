@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { BrainCircuit, Camera, Check, Cloud, FileText, Library, Mic, Send, ShieldCheck, Sparkles, Upload, WifiOff, X } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { BrainCircuit, Camera, Check, Cloud, FileText, Library, LoaderCircle, Mic, Send, ShieldCheck, Sparkles, Square, Upload, Volume2, VolumeX, WifiOff, X } from 'lucide-react';
 import { subjects } from './subjects';
 import { read, write } from './storage';
 import { localReply } from './assistant';
@@ -88,6 +88,11 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const [aiStatus, setAiStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [aiModel, setAiModel] = useState('');
   const [healthMessage, setHealthMessage] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     // Keep the previous mixed chat safely archived; never feed it into a subject-specific AI context.
@@ -122,6 +127,95 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
     return () => { active = false; };
   }, [lang]);
 
+  function stopSpeaking() {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setSpeaking(false);
+  }
+
+  function speak(text: string) {
+    if (!('speechSynthesis' in window)) {
+      setChatError(t('تشغيل الصوت غير مدعوم في هذا المتصفح.','Speech playback is not supported in this browser.'));
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = isArabic ? 'ar-IQ' : 'en-US';
+    utterance.rate = 0.95;
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(isArabic ? 'ar' : 'en'));
+    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    if (busy || transcribing) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setChatError(t('تسجيل الصوت غير مدعوم في هذا المتصفح. جرّب فتح الموقع في Safari.','Audio recording is not supported here. Try opening the app in Safari.'));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeCandidates = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+      const mimeType = mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        setChatError(t('صار خطأ أثناء التسجيل. حاول مرة ثانية.','Recording failed. Please try again.'));
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+        if (!blob.size) {
+          setChatError(t('التسجيل فارغ. حاول مرة ثانية.','The recording was empty. Please try again.'));
+          return;
+        }
+        setTranscribing(true);
+        setChatError('');
+        try {
+          const response = await fetch(`/api/transcribe?language=${lang}`, {
+            method: 'POST',
+            headers: { 'Content-Type': blob.type || 'audio/webm' },
+            body: blob,
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || typeof data.text !== 'string' || !data.text.trim()) {
+            throw new Error(data.message || t('تعذر فهم التسجيل الصوتي. حاول مرة ثانية.','Could not understand the recording. Please try again.'));
+          }
+          setQuery(data.text.trim());
+          await send(data.text.trim());
+        } catch (error) {
+          setChatError(error instanceof Error ? error.message : t('تعذر تحويل الصوت إلى نص.','Could not transcribe the audio.'));
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      recorder.start();
+      setRecording(true);
+      setChatError('');
+    } catch (error) {
+      const message = error instanceof Error && error.name === 'NotAllowedError'
+        ? t('اسمح للمتصفح باستخدام المايك من إعدادات الآيفون.','Allow microphone access in your iPhone browser settings.')
+        : t('تعذر تشغيل المايك. تأكد من صلاحية المايك وحاول ثانية.','Could not start the microphone. Check microphone permission and retry.');
+      setChatError(message);
+    }
+  }
+
   async function submit(request: PendingRequest) {
     setBusy(true);
     setChatError('');
@@ -143,6 +237,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
       }
       const sources = Array.isArray(data.sources) ? data.sources.filter((item: unknown): item is string => typeof item === 'string') : [];
       updateSubjectMessages(request.subjectId, (previous) => [...previous, { role: 'assistant', text: data.answer, ...(sources.length ? { sources } : {}) }]);
+      speak(data.answer);
       setAiStatus('ready');
       setAiModel(data.model || 'Gemini');
       setHealthMessage('');
@@ -160,8 +255,8 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
     }
   }
 
-  async function send() {
-    const text = query.trim();
+  async function send(voiceText?: string) {
+    const text = typeof voiceText === 'string' ? voiceText.trim() : query.trim();
     const file = selectedFile;
     if ((!text && !file) || busy) return;
     if (file && file.size > MAX_FILE_BYTES) {
@@ -278,6 +373,12 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
                   <Suspense fallback={<p className="markdown-loading">…</p>}>
                     <ChatMessage role={message.role} text={message.text} attachment={message.attachment}/>
                   </Suspense>
+                  {message.role === 'assistant' && (
+                    <button className="speak-answer-btn" onClick={() => speaking ? stopSpeaking() : speak(message.text)} type="button">
+                      {speaking ? <VolumeX size={14}/> : <Volume2 size={14}/>}
+                      {speaking ? t('إيقاف الصوت','Stop audio') : t('استمع للإجابة','Listen to answer')}
+                    </button>
+                  )}
                   {message.sources && message.sources.length > 0 && (
                     <div className="answer-sources">
                       <b><Library size={11}/> {t('من ملازمك','From your materials')}</b>
@@ -310,6 +411,12 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
               <button className="icon-btn" aria-label={t('إزالة الملف','Remove file')} onClick={() => setSelectedFile(null)}><X size={15}/></button>
             </div>
           )}
+          {(recording || transcribing) && (
+            <div className="voice-status" role="status">
+              {recording ? <Mic size={14}/> : <LoaderCircle size={14} className="spin"/>}
+              {recording ? t('جاري التسجيل… اضغط المايك للإيقاف','Recording… tap the mic to stop') : t('جاري تحويل كلامك إلى نص…','Transcribing your speech…')}
+            </div>
+          )}
           <div className="chat-compose">
             <div className="compose-tools">
               <label className="icon-btn" title={t('إرفاق صورة أو ملف','Attach an image or file')}>
@@ -329,7 +436,14 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
                 />
               </label>
               <button className="icon-btn" title={t('الكاميرا — ارفع صورة من جهازك','Camera — select an image to upload')} onClick={() => document.querySelector<HTMLInputElement>('.chat-compose input[type=file]')?.click()}><Camera size={17}/></button>
-              <button className="icon-btn" title={t('الصوت — قيد التطوير','Voice — planned')} onClick={() => alert(t('المحادثة الصوتية لم تُفعّل بعد.','Voice chat is not enabled yet.'))}><Mic size={17}/></button>
+              <button
+                className={`icon-btn ${recording ? 'recording' : ''}`}
+                title={recording ? t('إيقاف التسجيل وإرسال السؤال','Stop recording and send question') : t('اسأل بالصوت','Ask by voice')}
+                onClick={() => void toggleRecording()}
+                disabled={busy || transcribing}
+              >
+                {transcribing ? <LoaderCircle size={17} className="spin"/> : recording ? <Square size={15}/> : <Mic size={17}/>}
+              </button>
             </div>
             <textarea
               value={query}
@@ -361,7 +475,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
               [Check, t('حسابات محلية محددة','Selected local calculations'), 'ok'],
               [Cloud, t('إجابات AI سحابية','Cloud AI responses'), aiStatus === 'ready' ? 'ok' : 'wait'],
               [Camera, t('تحليل الصور والأسئلة','Image and question analysis'), aiStatus === 'ready' ? 'ok' : 'wait'],
-              [Mic, t('المحادثة الصوتية','Voice conversation'), 'wait'],
+              [Mic, t('المحادثة الصوتية','Voice conversation'), 'ok'],
             ].map(([Icon, label, status], index) => (
               <div className="cap-row" key={index}>
                 <Icon size={16}/><span>{label as string}</span>
