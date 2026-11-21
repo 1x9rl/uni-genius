@@ -60,6 +60,27 @@ app.post('/api/extract', async (request, response) => {
   }
 });
 
+app.post('/api/transcribe', express.raw({
+  type: (request) => /^audio\\//i.test(request.headers['content-type'] || ''),
+  limit: '15mb',
+}), async (request, response) => {
+  if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
+    return response.status(400).json({ error: 'empty_audio', message: 'No audio was received. Please record again.' });
+  }
+  try {
+    const mimeType = (request.get('content-type') || 'audio/webm').split(';')[0].trim();
+    const language = request.query.language === 'en' ? 'en' : 'ar';
+    const result = await groq.transcribe({ audioBuffer: request.body, mimeType, language });
+    return response.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Speech transcription failed:', error.code || 'unknown_transcription_error');
+    return response.status(error.status || 502).json({
+      error: error.code || 'transcription_failed',
+      message: error.message || 'Speech recognition failed. Please try again.',
+    });
+  }
+});
+
 app.post('/api/admin/course-materials-text', async (request, response) => {
   const expectedToken = process.env.COURSE_IMPORT_TOKEN || '';
   const suppliedToken = request.get('authorization') || '';
