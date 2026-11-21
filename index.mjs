@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAiService, extractAttachment, ProviderError, UserInputError } from './ai-service.mjs';
+import { createGroqService } from './groq-service.mjs';
 import { checkCloudKnowledgeConnection, cloudKnowledgeConfigured, loadCloudCourseDocuments, saveCloudCourseDocuments } from './cloud-knowledge.mjs';
 
 const app = express();
@@ -13,22 +14,29 @@ const ai = createAiService({
   apiKey: process.env.GEMINI_API_KEY || '',
   model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
 });
+const groq = createGroqService({
+  apiKey: process.env.GROQ_API_KEY || '',
+  model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+});
 
 app.get('/api/health', async (_request, response) => {
-  const [provider, cloudKnowledge] = await Promise.all([
+  const [provider, fallbackProvider, cloudKnowledge] = await Promise.all([
     ai.health(),
+    groq.health(),
     checkCloudKnowledgeConnection(),
   ]);
   response.json({
     ok: true,
-    providerConfigured: provider.configured,
-    provider: provider.provider,
-    model: provider.model,
+    providerConfigured: provider.configured || fallbackProvider.configured,
+    provider: provider.configured ? provider.provider : fallbackProvider.provider,
+    model: provider.configured ? provider.model : fallbackProvider.model,
+    fallbackConfigured: fallbackProvider.configured,
+    fallbackProvider: fallbackProvider.provider,
     cloudKnowledgeConfigured: cloudKnowledgeConfigured(),
     cloudKnowledge,
-    message: provider.configured
+    message: provider.configured || fallbackProvider.configured
       ? ''
-      : 'Google Gemini is not configured. Add GEMINI_API_KEY in Vercel Environment Variables to enable cloud AI.',
+      : 'No AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY in Vercel Environment Variables.',
   });
 });
 
@@ -170,7 +178,7 @@ app.post('/api/chat', async (request, response) => {
         cloudError instanceof Error ? cloudError.message : 'unknown_cloud_error',
       );
     }
-    const result = await ai.reply({
+    const aiRequest = {
       message,
       subjectId,
       mode,
@@ -178,7 +186,18 @@ app.post('/api/chat', async (request, response) => {
       history,
       attachment,
       courseDocuments: [...cloudDocuments, ...courseDocuments],
-    });
+    };
+    let result;
+    try {
+      result = await ai.reply(aiRequest);
+    } catch (geminiError) {
+      if (!groq.health().configured) throw geminiError;
+      console.warn('Gemini unavailable; switching to Groq fallback.', {
+        code: geminiError instanceof Error ? geminiError.code : 'unknown_provider_error',
+      });
+      result = await groq.reply(aiRequest);
+      result.fallback = true;
+    }
     return response.json(result);
   } catch (error) {
     if (error instanceof UserInputError) {
