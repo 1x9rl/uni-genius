@@ -314,16 +314,32 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
     setOfflineSyncBusy(true);
     setOfflineSyncStatus(t('جارٍ تنزيل محاضرات المواد إلى الآيفون…','Downloading course materials to this iPhone…'));
     let total = 0;
+    let totalChars = 0;
+    let persistenceGranted = false;
     try {
+      // Ask the browser to protect the offline database from automatic eviction when supported.
+      try {
+        if (navigator.storage?.persist) persistenceGranted = await navigator.storage.persist();
+      } catch {
+        persistenceGranted = false;
+      }
       for (const item of subjects) {
-        const response = await fetch(`/api/course-materials?subjectId=${encodeURIComponent(item.id)}`);
+        const response = await fetch(`/api/course-materials?subjectId=${encodeURIComponent(item.id)}`, { cache: 'no-store' });
         if (!response.ok) throw new Error(`تعذر تنزيل مادة ${item.ar}`);
         const data = await response.json();
         const docs = Array.isArray(data.documents) ? data.documents as CourseDoc[] : [];
         await saveOfflineCourseDocs(item.id, docs);
         total += docs.length;
+        totalChars += docs.reduce((sum, doc) => sum + (typeof doc.text === 'string' ? doc.text.length : 0), 0);
       }
-      setOfflineSyncStatus(t(`اكتملت المزامنة: ${total} ملف محاضرة محفوظ محلياً.`, `Sync complete: ${total} lecture files saved on this device.`));
+      const approxMb = (totalChars * 2 / (1024 * 1024)).toFixed(1);
+      const protection = persistenceGranted
+        ? t(' وحماية التخزين مفعّلة.', ' Persistent storage protection granted.')
+        : t(' ملاحظة: احتفظ بفتح التطبيق دورياً لأن iOS قد يدير مساحة التخزين.', ' Note: open the app periodically; iOS may manage website storage.');
+      setOfflineSyncStatus(t(
+        `اكتملت المزامنة: ${total} ملف محاضرة محفوظ محلياً (حوالي ${approxMb} MB).${protection}`,
+        `Sync complete: ${total} lecture files saved locally (about ${approxMb} MB).${protection}`,
+      ));
     } catch (error) {
       setOfflineSyncStatus(error instanceof Error ? error.message : t('فشلت مزامنة المحاضرات.','Material sync failed.'));
     } finally {
