@@ -67,15 +67,27 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const isArabic = lang === 'ar';
   const t = (ar: string, en: string) => isArabic ? ar : en;
   const currentSubject = subjects.find((item) => item.id === subject) ?? subjects[0];
-  const [messagesBySubject, setMessagesBySubject] = useState<Record<string, ChatMessageRecord[]>>(() => read<Record<string, ChatMessageRecord[]>>('messagesBySubject', {}));
-  const messages = messagesBySubject[subject] ?? [];
+  const [messagesBySubject, setMessagesBySubject] = useState<Record<string, ChatMessageRecord[]>>(() => {
+    const stored = read<unknown>('messagesBySubject', {});
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    return Object.fromEntries(Object.entries(stored).map(([subjectId, value]) => [
+      subjectId,
+      Array.isArray(value) ? value.filter((item): item is ChatMessageRecord =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        ((item as ChatMessageRecord).role === 'user' || (item as ChatMessageRecord).role === 'assistant') &&
+        typeof (item as ChatMessageRecord).text === 'string'
+      ) : [],
+    ]));
+  });
+  const messages = Array.isArray(messagesBySubject[subject]) ? messagesBySubject[subject] : [];
 
   function updateSubjectMessages(
     subjectId: string,
     update: ChatMessageRecord[] | ((previous: ChatMessageRecord[]) => ChatMessageRecord[]),
   ) {
     setMessagesBySubject((previous) => {
-      const current = previous[subjectId] ?? [];
+      const current = Array.isArray(previous[subjectId]) ? previous[subjectId] : [];
       const next = typeof update === 'function' ? update(current) : update;
       return { ...previous, [subjectId]: next };
     });
