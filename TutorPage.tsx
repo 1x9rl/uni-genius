@@ -67,7 +67,19 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const isArabic = lang === 'ar';
   const t = (ar: string, en: string) => isArabic ? ar : en;
   const currentSubject = subjects.find((item) => item.id === subject) ?? subjects[0];
-  const [messages, setMessages] = useState<ChatMessageRecord[]>(() => read('messages', []));
+  const [messagesBySubject, setMessagesBySubject] = useState<Record<string, ChatMessageRecord[]>>(() => read('messagesBySubject', {}));
+  const messages = messagesBySubject[subject] ?? [];
+
+  function updateSubjectMessages(
+    subjectId: string,
+    update: ChatMessageRecord[] | ((previous: ChatMessageRecord[]) => ChatMessageRecord[]),
+  ) {
+    setMessagesBySubject((previous) => {
+      const current = previous[subjectId] ?? [];
+      const next = typeof update === 'function' ? update(current) : update;
+      return { ...previous, [subjectId]: next };
+    });
+  }
   const [query, setQuery] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,8 +90,13 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const [healthMessage, setHealthMessage] = useState('');
 
   useEffect(() => {
-    write('messages', messages);
-  }, [messages]);
+    // Keep the previous mixed chat safely archived; never feed it into a subject-specific AI context.
+    const legacyMessages = read<ChatMessageRecord[]>('messages', []);
+    if (legacyMessages.length && !read('legacyMessagesArchive', []).length) {
+      write('legacyMessagesArchive', legacyMessages);
+    }
+    write('messagesBySubject', messagesBySubject);
+  }, [messagesBySubject]);
 
   useEffect(() => {
     let active = true;
@@ -125,7 +142,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
         throw new Error(t('وصل رد فارغ من مزود AI. أعد المحاولة.','The AI provider returned an empty response. Please retry.'));
       }
       const sources = Array.isArray(data.sources) ? data.sources.filter((item: unknown): item is string => typeof item === 'string') : [];
-      setMessages((previous) => [...previous, { role: 'assistant', text: data.answer, ...(sources.length ? { sources } : {}) }]);
+      updateSubjectMessages(request.subjectId, (previous) => [...previous, { role: 'assistant', text: data.answer, ...(sources.length ? { sources } : {}) }]);
       setAiStatus('ready');
       setAiModel(data.model || 'Gemini');
       setHealthMessage('');
@@ -183,7 +200,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
       ...(attachment ? { attachment } : {}),
       courseDocuments: docsForRequest(subject),
     };
-    setMessages((previous) => [...previous, userMessage]);
+    updateSubjectMessages(request.subjectId, (previous) => [...previous, userMessage]);
     setQuery('');
     setSelectedFile(null);
     setLastRequest(request);
@@ -193,7 +210,7 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   function useLocalGuidance() {
     if (!lastRequest) return;
     const localQuestion = lastRequest.message || t('اشرح المسألة المرفقة.','Explain the attached question.');
-    setMessages((previous) => [
+    updateSubjectMessages(lastRequest.subjectId, (previous) => [
       ...previous,
       { role: 'assistant', text: localReply(localQuestion, lastRequest.subjectId, lastRequest.mode) },
     ]);
