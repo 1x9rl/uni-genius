@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { BrainCircuit, Camera, Check, Cloud, FileText, Library, LoaderCircle, Mic, Send, ShieldCheck, Sparkles, Square, Upload, Volume2, VolumeX, WifiOff, X } from 'lucide-react';
+import { BrainCircuit, Camera, Check, Cloud, FileText, Library, LoaderCircle, Mic, Send, ShieldCheck, Sparkles, Square, Upload, WifiOff, X } from 'lucide-react';
 import { subjects } from './subjects';
 import { read, write } from './storage';
 import { localReply } from './assistant';
@@ -90,7 +90,6 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const [healthMessage, setHealthMessage] = useState('');
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -126,29 +125,6 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
       });
     return () => { active = false; };
   }, [lang]);
-
-  function stopSpeaking() {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setSpeaking(false);
-  }
-
-  function speak(text: string) {
-    if (!('speechSynthesis' in window)) {
-      setChatError(t('تشغيل الصوت غير مدعوم في هذا المتصفح.','Speech playback is not supported in this browser.'));
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = isArabic ? 'ar-IQ' : 'en-US';
-    utterance.rate = 0.95;
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(isArabic ? 'ar' : 'en'));
-    if (preferredVoice) utterance.voice = preferredVoice;
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }
 
   async function toggleRecording() {
     if (recording) {
@@ -372,12 +348,6 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
                   <Suspense fallback={<p className="markdown-loading">…</p>}>
                     <ChatMessage role={message.role} text={message.text} attachment={message.attachment}/>
                   </Suspense>
-                  {message.role === 'assistant' && (
-                    <button className="speak-answer-btn" onClick={() => speaking ? stopSpeaking() : speak(message.text)} type="button">
-                      {speaking ? <VolumeX size={14}/> : <Volume2 size={14}/>}
-                      {speaking ? t('إيقاف الصوت','Stop audio') : t('استمع للإجابة','Listen to answer')}
-                    </button>
-                  )}
                   {message.sources && message.sources.length > 0 && (
                     <div className="answer-sources">
                       <b><Library size={11}/> {t('من ملازمك','From your materials')}</b>
