@@ -191,7 +191,7 @@ app.post('/api/chat', async (request, response) => {
     try {
       result = await ai.reply(aiRequest);
     } catch (geminiError) {
-      if (!groq.health().configured) throw geminiError;
+      if (!(await groq.health()).configured) throw geminiError;
       console.warn('Gemini unavailable; switching to Groq fallback.', {
         code: geminiError instanceof Error ? geminiError.code : 'unknown_provider_error',
       });
