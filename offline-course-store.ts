@@ -53,17 +53,17 @@ export async function getOfflineCourseDocs(subjectId: string): Promise<CourseDoc
 
 function normalizeSearchText(value: string): string {
   return value
-    .replace(/\\\\n/g, '\n')
+    .replace(/\\n/g, '\n')
     .normalize('NFKC')
     .toLocaleLowerCase()
-    .replace(/[\\u064B-\\u065F\\u0670\\u0640]/g, '')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
     .replace(/[ـ\u200e\u200f]/g, '');
 }
 
 export async function offlineCourseReply(question: string, subjectId: string): Promise<string> {
   const docs = await getOfflineCourseDocs(subjectId);
   const normalizedQuestion = normalizeSearchText(question);
-  const terms = normalizedQuestion.match(/[\\p{L}\\p{N}]+/gu)?.filter((term) => term.length > 1) ?? [];
+  const terms = normalizedQuestion.match(/[a-z0-9\u0600-\u06ff]+/g)?.filter((term) => term.length > 1) ?? [];
   if (!docs.length) return 'لا توجد محاضرات محفوظة أوفلاين لهذه المادة. اتصل بالإنترنت وافتح مزامنة المحاضرات أولاً.';
   if (!terms.length) return 'اكتب كلمة أو مصطلحاً واضحاً حتى أبحث عنه في محاضراتك المحفوظة.';
 
@@ -73,14 +73,16 @@ export async function offlineCourseReply(question: string, subjectId: string): P
     if (!source.trim()) continue;
     const normalized = normalizeSearchText(source);
     const chunks = normalized
-      .split(/(?<=[.!?؟])\\s+|\\n+/u)
+      .split(/(?<=[.!?؟])\s+|\n+/u)
       .map((part) => part.trim())
       .filter((part) => part.length > 35);
 
     const candidates = chunks.length ? chunks : [normalized];
+    let documentMatched = false;
     for (const chunk of candidates) {
       const score = terms.reduce((sum, term) => sum + (chunk.includes(term) ? 1 : 0), 0);
       if (score > 0) {
+        documentMatched = true;
         const firstTerm = terms.find((term) => chunk.includes(term)) || '';
         const position = Math.max(0, chunk.indexOf(firstTerm) - 650);
         matches.push({
@@ -91,19 +93,19 @@ export async function offlineCourseReply(question: string, subjectId: string): P
       }
     }
 
-    // Also search the complete document, so line wrapping or unusual PDF extraction
-    // cannot hide a match between sentence boundaries.
-    const wholeScore = terms.reduce((sum, term) => sum + (normalized.includes(term) ? 1 : 0), 0);
-    if (wholeScore > 0 && !matches.some((item) => item.doc.id === doc.id)) {
-      const firstTerm = terms.find((term) => normalized.includes(term)) || '';
-      const position = Math.max(0, normalized.indexOf(firstTerm) - 650);
-      matches.push({ doc, excerpt: normalized.slice(position, position + 1800), score: wholeScore });
+    if (!documentMatched) {
+      const wholeScore = terms.reduce((sum, term) => sum + (normalized.includes(term) ? 1 : 0), 0);
+      if (wholeScore > 0) {
+        const firstTerm = terms.find((term) => normalized.includes(term)) || '';
+        const position = Math.max(0, normalized.indexOf(firstTerm) - 650);
+        matches.push({ doc, excerpt: normalized.slice(position, position + 1800), score: wholeScore });
+      }
     }
   }
 
   matches.sort((a, b) => b.score - a.score);
   const top = matches.slice(0, 5);
   if (!top.length) return 'بحثت في محاضراتك المحفوظة لهذه المادة، لكن لم أجد مقطعاً يطابق كلمات السؤال. لا أريد اختراع جواب غير موجود في مصادرك. اتصل بالإنترنت لاستخدام المساعد السحابي.';
-  return 'إجابة محلية أوفلاين مبنية على المقاطع المطابقة من محاضراتك (وليست توليداً من نموذج سحابي):\\n\\n' +
-    top.map((item, index) => `**مقطع ${index + 1} — ${item.doc.name}${item.doc.chapter ? ' / ' + item.doc.chapter : ''}**\\n\\n${item.excerpt}`).join('\\n\\n---\\n\\n');
+  return 'إجابة محلية أوفلاين مبنية على المقاطع المطابقة من محاضراتك (وليست توليداً من نموذج سحابي):\n\n' +
+    top.map((item, index) => '**مقطع ' + (index + 1) + ' — ' + item.doc.name + (item.doc.chapter ? ' / ' + item.doc.chapter : '') + '**\n\n' + item.excerpt).join('\n\n---\n\n');
 }
