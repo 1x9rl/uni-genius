@@ -3,7 +3,8 @@ import { BrainCircuit, Camera, Check, Cloud, FileText, Library, LoaderCircle, Mi
 import { subjects } from './subjects';
 import { read, write } from './storage';
 import { localReply } from './assistant';
-import { docsForRequest } from './CourseLibrary';
+import { docsForRequest, type CourseDoc } from './CourseLibrary';
+import { offlineCourseReply, saveOfflineCourseDocs } from './offline-course-store';
 
 const ChatMessage = lazy(() => import('./ChatMessage').then((module) => ({ default: module.ChatMessage })));
 
@@ -100,6 +101,8 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
   const [aiStatus, setAiStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [aiModel, setAiModel] = useState('');
   const [healthMessage, setHealthMessage] = useState('');
+  const [offlineSyncStatus, setOfflineSyncStatus] = useState('');
+  const [offlineSyncBusy, setOfflineSyncBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -231,6 +234,20 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
       setChatError('');
       setLastRequest(null);
     } catch (error) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        try {
+          const localAnswer = await offlineCourseReply(request.message, request.subjectId);
+          updateSubjectMessages(request.subjectId, (previous) => [...previous, { role: 'assistant', text: localAnswer }]);
+          setLastRequest(null);
+          setChatError('');
+          setAiStatus('unavailable');
+          setHealthMessage(t('أنت تعمل الآن دون إنترنت — وضع المحاضرات المحلي.','Offline mode — local course materials.'));
+          return;
+        } catch (offlineError) {
+          setChatError(offlineError instanceof Error ? offlineError.message : t('تعذر البحث في المحاضرات المحلية.','Could not search local course materials.'));
+          return;
+        }
+      }
       const message = error instanceof Error ? error.message : t('حدث خطأ غير متوقع.','An unexpected error occurred.');
       setChatError(message);
       if (providerProblem) {
@@ -287,6 +304,31 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
     setSelectedFile(null);
     setLastRequest(request);
     await submit(request);
+  }
+
+  async function syncOfflineMaterials() {
+    if (!navigator.onLine || offlineSyncBusy) {
+      setOfflineSyncStatus(t('اتصل بالإنترنت أولاً لتنزيل المحاضرات.','Connect to the internet first to download materials.'));
+      return;
+    }
+    setOfflineSyncBusy(true);
+    setOfflineSyncStatus(t('جارٍ تنزيل محاضرات المواد إلى الآيفون…','Downloading course materials to this iPhone…'));
+    let total = 0;
+    try {
+      for (const item of subjects) {
+        const response = await fetch(`/api/course-materials?subjectId=${encodeURIComponent(item.id)}`);
+        if (!response.ok) throw new Error(`تعذر تنزيل مادة ${item.ar}`);
+        const data = await response.json();
+        const docs = Array.isArray(data.documents) ? data.documents as CourseDoc[] : [];
+        await saveOfflineCourseDocs(item.id, docs);
+        total += docs.length;
+      }
+      setOfflineSyncStatus(t(`اكتملت المزامنة: ${total} ملف محاضرة محفوظ محلياً.`, `Sync complete: ${total} lecture files saved on this device.`));
+    } catch (error) {
+      setOfflineSyncStatus(error instanceof Error ? error.message : t('فشلت مزامنة المحاضرات.','Material sync failed.'));
+    } finally {
+      setOfflineSyncBusy(false);
+    }
   }
 
   function useLocalGuidance() {
@@ -463,6 +505,16 @@ export function TutorPage({ lang, subject, setSubject, mode, setMode, onOpenLibr
                 <i className={status as string}>{status === 'ok' ? '●' : '○'}</i>
               </div>
             ))}
+          </div>
+          <div className="panel source-panel">
+            <div className="eyebrow">OFFLINE STUDY</div>
+            <h3>{t('الدراسة بدون إنترنت','Study offline')}</h3>
+            <p>{t('نزّل محاضراتك إلى تخزين الآيفون. بعدها تقدر تبحث داخلها وتستعرض المقاطع المطابقة حتى بدون اتصال.','Download your lectures into iPhone storage. Then search and view matching passages without a connection.')}</p>
+            <button className="secondary-btn" onClick={() => void syncOfflineMaterials()} disabled={offlineSyncBusy}>
+              {offlineSyncBusy ? <LoaderCircle size={16} className="spin"/> : <Cloud size={16}/>}
+              {offlineSyncBusy ? t('جارٍ التنزيل…','Downloading…') : t('نزّل/حدّث كل المحاضرات','Download/update all lectures')}
+            </button>
+            {offlineSyncStatus && <p role="status">{offlineSyncStatus}</p>}
           </div>
           <div className="panel source-panel">
             <div className="eyebrow">GROUNDING</div>
